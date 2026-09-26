@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-os"
+version = "0.1.0"
+description = "A local workspace with a bounded model loop, durable tasks, and approved writes"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+llm-os = "llm_os.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["llm_os*"]
+
+[tool.setuptools.package-data]
+llm_os = ["static/*"]

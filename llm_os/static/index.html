@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM OS — Local workspace</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-mark">L<span>↗</span></span><span>LLM OS<small>LOCAL WORKSPACE</small></span></a>
+    <div class="workspace-label"><span class="dot"></span> Personal workspace <span class="version">v0.1</span></div>
+    <nav aria-label="Workspace"><button class="nav active" data-view="tasks">↗ <span>Tasks</span><span id="task-count" class="count">0</span></button><button class="nav" data-view="documents">▤ <span>Documents</span><span id="doc-count" class="count">0</span></button><button class="nav" data-view="memory">◇ <span>Memory</span><span id="memory-count" class="count">0</span></button></nav>
+    <div class="recent-label">RECENT TASKS</div><div id="task-list" class="task-list"></div>
+    <div class="sidebar-foot"><span class="dot"></span> Runs on your machine<p>Read. Propose. Review. Save.</p></div>
+  </aside>
+  <main>
+    <header class="topbar"><div>Workspace <span>/</span> <strong id="view-label">Tasks</strong></div><div class="connection" id="connection">Checking local model…</div></header>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="tasks-view">
+      <div class="page-heading"><div><p class="eyebrow">A SMALL OPERATING ENVIRONMENT FOR AI</p><h1>Give your work a next step.</h1><p class="intro">Let a model work with your documents. Review what it wants to save.</p></div><div class="local-stamp">YOUR DATA<br><strong>STAYS LOCAL</strong></div></div>
+      <form id="task-form" class="composer">
+        <label for="goal">What would you like to get done?</label><textarea id="goal" required maxlength="2000" rows="2" readonly></textarea>
+        <div class="composer-bottom"><div class="controls"><label class="compact">Engine<select id="mode"><option value="demo">Scripted demo</option><option value="ollama">Local Ollama</option></select></label><label class="compact" id="model-control" hidden>Model<select id="model"></select></label><label class="check"><input id="writes" type="checkbox" checked> Allow reviewed writes</label></div><button class="primary" id="run-button" type="submit">Run task <span>↗</span></button></div>
+        <p id="mode-note" class="mode-note">A fixed release-brief walkthrough. No language model is called.</p>
+      </form>
+      <div id="empty-state" class="empty-state"><div class="empty-icon">↗</div><h2>Start with the release brief</h2><p>The demo searches a document, drafts a brief, and asks before saving.<br>You'll see each step as it happens.</p><div class="flow"><span>01 Search</span><i>→</i><span>02 Draft</span><i>→</i><span>03 Review</span><i>→</i><span>04 Remember</span></div></div>
+      <section id="task-detail" hidden><div class="task-heading"><div><p class="eyebrow">ACTIVE TASK</p><h2 id="task-title"></h2></div><button id="cancel-button" class="subtle">Cancel task</button></div><div id="task-metrics" class="metrics"></div><div class="work-grid"><div><div id="approval"></div><div class="panel"><div class="panel-head"><h3>Activity</h3><span>Execution record</span></div><div id="events"></div></div></div><div><div class="panel"><div class="panel-head"><h3>Artifacts</h3><span id="artifact-count">0 saved</span></div><div id="artifacts"></div></div><div class="boundary-note"><span>◇</span><div><strong>You control persistence</strong><p>Every artifact and memory write needs your review. Reading uses the documents captured when this task started.</p></div></div><div id="result" class="result" hidden></div></div></div></section>
+    </section>
+    <section id="documents-view" hidden><div class="page-heading"><div><p class="eyebrow">WORKSPACE CONTEXT</p><h1>Documents</h1><p class="intro">Source material your tasks can search and read.</p></div><button class="primary" id="add-document">+ Add document</button></div><div id="documents" class="document-grid"></div></section>
+    <section id="memory-view" hidden><div class="page-heading"><div><p class="eyebrow">WHAT CARRIES FORWARD</p><h1>Memory</h1><p class="intro">Facts you approved for future tasks. Every update has a version.</p></div></div><div id="memories" class="document-grid"></div></section>
+    <footer>LLM OS <span>Local models · explicit permissions · durable work</span></footer>
+  </main>
+  <dialog id="document-dialog"><form id="document-form"><div class="dialog-head"><h2>Add a document</h2><button type="button" id="close-dialog" class="subtle" aria-label="Close">×</button></div><label for="document-title">Title</label><input id="document-title" maxlength="120" required><label for="document-content">Content</label><textarea id="document-content" rows="10" maxlength="12000" required></textarea><p class="muted">Available to tasks created after you save it.</p><button class="primary">Save document</button></form></dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>
