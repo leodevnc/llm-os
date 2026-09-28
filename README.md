@@ -1,20 +1,34 @@
 # LLM OS
 
-A local workspace where a language model works with documents, proposes artifacts, and carries
-approved facts into later tasks. The application supplies a small kernel: bounded execution,
-document snapshots, persistent memory, explicit write review, and an inspectable activity record.
-"OS" describes these application primitives; this project runs inside an existing operating system.
+A local operating environment where a language model chooses actions, loads evidence into working
+memory, uses tools, and saves reviewed work to a versioned virtual disk. A small host kernel owns
+permissions, scheduling, context residency, and persistence.
 
-![LLM OS workspace](docs/workspace.png)
+Inspired by Andrej Karpathy's [LLM OS framing](https://www.youtube.com/watch?v=zjkBMFhNj_g&t=2535s):
+the model is analogous to a processor, its context to working memory, and tools and storage extend
+what it can do. This is our bounded software interpretation, not a reproduction of a prescribed
+architecture. It runs **inside** Linux, macOS, or WSL; it is not a bootable OS or a device controller.
 
-The central experiment is a **model-driven action loop**. A local model chooses one typed action,
-the kernel validates and executes it, and the next turn sees the observation. Artifact and memory
-writes pause for review. The model never receives a Python interpreter, a shell, or arbitrary file
-access through this interface.
+![Computer overview](docs/os-overview.png)
 
-## Start the workspace
+## What runs today
 
-Use Python 3.11+ on Linux, macOS, or WSL. The runtime uses only the standard library.
+| Component | Implemented behavior |
+| --- | --- |
+| Processor | Local Ollama chooses one typed action per turn |
+| Working memory | `page_in` / `page_out`, a 12,000-source-character resident set, eviction and reload |
+| Persistent storage | Virtual files with version history; approved facts in shared memory |
+| Classical computation | Bounded arithmetic without Python evaluation or shell access |
+| Applications | Workspace, Research brief, Read-only reviewer; host-owned tool and write scopes |
+| Processes | Durable tasks, two worker slots, one-turn cooperative scheduling, cancellation fencing |
+| Human control | Exact-content write review and stale-version conflict detection |
+
+The model proposes actions; the host enforces the boundaries. No arbitrary code execution, host
+filesystem access, device drivers, cloud calls, or paid infrastructure is wired into the tools.
+
+## Try the complete loop
+
+Use Python 3.11+. The runtime uses only the standard library.
 
 ```bash
 git clone https://github.com/leodevnc/llm-os.git
@@ -22,62 +36,69 @@ cd llm-os
 python3 -m llm_os
 ```
 
-Open **http://127.0.0.1:8787**. State is stored in `.llm-os/`. You can choose a different directory
-with `--data PATH` and a port with `--port 8788`. One server owns a data directory at a time.
+Open **http://127.0.0.1:8787** and select **Run OS demo**.
 
-The included **Scripted demo** works without a model. It runs a fixed release-brief scenario using
-the sample documents. Its text and output explicitly identify the demo; arbitrary requests require
-a local model.
+1. The program searches the release checklist and pages it into working memory.
+2. The arithmetic tool computes `18 * 7 + 24 = 150`.
+3. Review the exact proposed file at `/reports/release-brief.md`; approve or reject it.
+4. On approval, the file is saved, the source page is released, and the task finishes in six turns.
+5. Open **Files** to inspect the persisted result. Later tasks can read it with `fs_read`.
 
-1. Select **Run task**. The demo searches and reads the release checklist.
-2. Review the proposed brief and choose **Approve & continue**.
-3. Review the proposed `release-owner` memory and approve it.
-4. Inspect the saved artifact and the Memory tab. Refresh the page to confirm persistence.
+**This walkthrough is explicitly scripted; it does not call an LLM.** It exercises the real kernel,
+pager, calculator, approval transaction, and filesystem. The separate Scripted release demo still
+demonstrates artifact and persistent-memory review. Arbitrary goals require a local model.
 
-Rejecting a write makes the demo stop without making further write requests. Clearing **Allow
-reviewed writes** denies writes at the kernel boundary, regardless of the model's proposal.
+State lives in `.llm-os/`. Use `--data PATH` and `--port 8788` to change it. One server owns a data
+directory at a time. Existing v0.1 workspaces receive additive tables and an app-manifest column;
+old tasks retain Workspace capabilities.
 
 ## Connect a local model
 
-Run an existing Ollama installation with a downloaded local model. Configure Ollama's local-only
-mode before using workspace data; for a foreground server this can be:
+Run an existing Ollama installation with downloaded local model weights. Configure the service's
+local-only mode before providing workspace data:
 
 ```bash
 OLLAMA_NO_CLOUD=1 ollama serve
 ```
 
-For an existing service, apply the setting to that service and restart it. See the official
+For a running service, apply the setting to that service and restart it. See
 [Ollama local-only configuration](https://docs.ollama.com/faq#how-do-i-disable-ollama-cloud-features).
-LLM OS does not install Ollama or download model weights.
+LLM OS does not install Ollama or download weights.
 
-Reload the page, select **Local Ollama**, choose an installed model, and enter a task. The adapter
-uses `127.0.0.1:11434`, bypasses environment proxies, does not follow redirects, and rejects model
-names containing `cloud`. Model-name filtering is a convenience, not proof that an independently
-configured Ollama service cannot forward requests; the service's local-only configuration matters.
+Reload the page and open an app, or select **Local Ollama** in Tasks. Choose an installed model and
+enter a goal such as: "Read the release checklist, compute 18 * 7 + 24, and save a report."
+Research brief can save under `/reports/`; Read-only reviewer cannot save anything.
+All apps currently share read access, so these scopes are **not tenant isolation**.
 
-The request uses Ollama's [chat API](https://docs.ollama.com/api/chat) and
-[structured outputs](https://docs.ollama.com/capabilities/structured-outputs), followed by independent
-validation in Python. A malformed response fails the task visibly. There is no silent switch to
-demo mode. This milestone verified the adapter against a loopback HTTP stub; no Ollama model was
-installed on the development machine, so real-model behavior remains unverified.
+The adapter uses `127.0.0.1:11434`, bypasses environment proxies, does not follow redirects, and
+rejects names containing `cloud`. Name filtering does not prove an independently configured
+Ollama service is local; its configuration matters. Requests use the
+[chat API](https://docs.ollama.com/api/chat) and
+[structured outputs](https://docs.ollama.com/capabilities/structured-outputs), with independent
+Python validation. Provider failure never silently switches to a demo.
 
-## What the kernel exposes
+**No local model was installed during verification.** The HTTP adapter was tested against a
+loopback stub, not live inference. Model tool selection, model-specific schema support, and answer
+quality remain unverified.
 
-| Action | Purpose | Persistence rule |
-| --- | --- | --- |
-| `search(query)` | Find documents in the task's captured workspace | Read only |
-| `read(document_id)` | Read a captured document by ID | Read only |
-| `recall(query)` | Read matching current workspace memory with versions | Read only |
-| `write(title, content)` | Propose an artifact | Exact content reviewed before save |
-| `remember(key, value)` | Propose a persistent fact | Review plus memory-version check |
-| `finish(text)` | Complete the task | Save final response and stop |
+## Kernel interface
 
-Tasks have a fixed step budget, two worker slots, and a 60-second socket timeout for local model
-requests. Cancellation invalidates an in-flight turn's epoch, so its late response cannot save
-an action. On restart, interrupted model turns become runnable again; their consumed step remains
-counted. Pending reviews and already approved artifacts survive restart.
+| Actions | Contract |
+| --- | --- |
+| `search`, `read` | Read immutable source documents captured when the task starts |
+| `page_in`, `page_out` | Retain or release source documents in subsequent model contexts |
+| `fs_list`, `fs_read` | Inspect current shared virtual files |
+| `fs_write` | Review exact content; check app path scope and expected file version |
+| `calculate` | Numbers, parentheses, and `+ - * /`; bounded complexity and magnitude |
+| `recall`, `remember` | Read shared facts; review and version-check updates |
+| `write` | Review a task artifact, kept separately from the shared virtual disk |
+| `finish` | Store a final response and stop |
 
-## Tests
+Resident source content and observation history share an 18,000-character payload allowance;
+resident source content is capped at 12,000. This is **not** a token budget or a bound on the entire
+serialized request. Instructions, inventory, framing, and escaping add overhead.
+
+## Verify locally
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -86,30 +107,31 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-Python tests cover execution ownership, cancellation fencing, approval replay, memory conflicts,
-snapshot reads, character-budget eviction, malformed actions, the real HTTP adapter boundary, and
-local-origin restrictions. Browser tests exercise the two-review workflow, rejected writes,
-durable display, mobile width, and literal rendering of document HTML.
+Tests exercise eviction/reload, app enforcement, path validation, arithmetic restrictions, atomic
+file writes, conflicting reviews, historical file versions, cooperative scheduling, migration,
+cancellation/recovery, the HTTP adapter, and browser workflows.
 
 ## Engineering record
 
+- [Karpathy framing and implementation map](docs/karpathy-llm-os.md)
 - [Architecture and task state](docs/architecture.md)
 - [Decisions and tradeoffs](docs/decisions.md)
 - [Test evidence](docs/test-evidence.md)
 - [Learning notes](docs/learning-notes.md)
 - [Roadmap](docs/roadmap.md)
 
-## Scope
+## Limits
 
-This is a single-user, single-host prototype. Local account access is the trust boundary. The UI
-has no authentication or tenant separation. It is bound to loopback and should stay there. The
-model's final response is not checked for factual accuracy. Approval controls saving, not truth.
-Untrusted document text can still influence a model's proposals within its allowed capabilities.
+Single user, single host, loopback only. There is no authentication, multi-user isolation, hard
+preemption, end-to-end model deadline, or adversarial code sandbox. SQLite data are unencrypted;
+retention and deletion controls are not implemented. Task/file history can grow without quota.
+A 60-second socket timeout limits stalled I/O, not total request duration.
 
-Context is bounded in characters, not model tokens, and older observations can be omitted. The
-database retains the complete record. SQLite data are unencrypted, and retention/deletion controls
-are future work. There is no MCP bridge, multi-agent scheduler, vector database, remote service
-integration, or arbitrary code sandbox in this milestone.
+Source pages use task snapshots; files and memory are live shared state. Eviction releases a page
+from the next context, not from the database or model server's own internal caches. Untrusted text
+can influence model proposals. Approval authorizes saving; it does not establish truth or defeat
+prompt injection. There is no MCP bridge, remote integration, device control, or automatic subagent
+creation in this milestone.
 
 ## License
 

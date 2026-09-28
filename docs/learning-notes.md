@@ -1,13 +1,22 @@
 # Learning notes
 
-- The useful kernel boundary is where a model proposal becomes an action. Formatting a JSON answer
-  is insufficient; the host must check the operation, fields, capability, task state, and epoch.
-- Cancellation and interruption have different semantics. Cancellation invalidates a task's future
-  commits, while restart recovery creates a new attempt with the remaining budget.
-- Persistent memory introduces shared mutable state. A version captured at review time makes an
-  overwrite conflict visible instead of letting a stale approval silently replace newer data.
-- An immutable document snapshot and current memory provide different consistency guarantees.
-  The interface and model context should explain which source is being read.
-- Demonstration scripts are useful for testing the system boundary, but they provide no evidence
-  about a model's ability to choose tools or produce accurate work. Provider and model quality need
-  separate evidence.
+- The useful kernel boundary is where a model proposal becomes an action. A shaped JSON answer is
+  insufficient; the host checks fields, capability, namespace, state, and epoch.
+- "Context as RAM" becomes testable when residency is distinct from backing storage. Evicting a
+  page should change the next context while leaving its source recoverable. Character budgets
+  make the mechanism inspectable but do not predict token consumption reliably.
+- File persistence and conversational memory are different interfaces. A report has a path and
+  revisions; a recalled fact has a key and value. Both are shared state and need explicit overwrite
+  semantics, while source snapshots remain immutable for a task.
+- Checking the file version when asking for review is insufficient. Another task can commit before
+  the person approves. Comparing again inside the effect transaction prevents a stale overwrite.
+- The app manifest belongs to the host, not to generated instructions. Read-only means the kernel
+  rejects persistence operations even when the task-level write flag was requested.
+- Yielding after one model turn improves queue behavior without losing durable task state. It
+  cannot rescue a slot occupied by slow I/O; fairness and deadlines are separate mechanisms.
+- Cancellation and restart differ: cancellation fences future commits, while recovery creates a
+  new attempt with the remaining step budget. The model's repeated answer need not be identical.
+- App namespaces restrict writes, not reads. Shared reads are useful in a personal workspace but
+  should never be presented as isolation between mutually untrusted users.
+- Fixed demos reveal bugs in the operating environment, not model competence. A real-model goal
+  suite remains necessary before claiming that an LLM can reliably use these primitives.

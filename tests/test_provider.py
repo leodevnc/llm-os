@@ -33,7 +33,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["op"], "finish")
         request = self.requests[0]
         self.assertFalse(request["stream"])
-        self.assertEqual(len(request["format"]["oneOf"]), 6)
+        self.assertEqual(len(request["format"]["oneOf"]), 12)
         self.assertEqual(request["options"]["temperature"], 0)
 
     def test_cloud_name_rejected_before_request(self):

@@ -52,9 +52,9 @@ def make_server(kernel, runner, port=8787):
                     self.send(200, runner.ollama.models())
                 elif path.startswith("/api/tasks/"):
                     self.send(200, kernel.task(path.removeprefix("/api/tasks/")))
-                elif path in {"/", "/app.js", "/style.css"}:
+                elif path in {"/", "/app.js", "/os.js", "/style.css"}:
                     name = "index.html" if path == "/" else path[1:]
-                    mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}[name]
+                    mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "os.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}[name]
                     self.send(200, (assets / name).read_bytes(), mime)
                 else:
                     self.send(404, {"error": "Not found"})
@@ -73,7 +73,7 @@ def make_server(kernel, runner, port=8787):
                     raise ValueError("Expected a JSON object")
                 path = urlsplit(self.path).path
                 if path == "/api/tasks":
-                    if set(data) != {"goal", "mode", "model", "writes", "max_steps"}:
+                    if not {"goal", "mode", "model", "writes", "max_steps"} <= set(data) or set(data) - {"goal", "mode", "model", "writes", "max_steps", "app_id"}:
                         raise ValueError("Invalid task fields")
                     task_id = kernel.create(**data)
                     runner.submit(task_id)

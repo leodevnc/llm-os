@@ -1,73 +1,107 @@
 # Architecture
 
 ```text
-Browser workspace
-    │ task goal / review decision
-    ▼
-Loopback HTTP server ───── SQLite workspace
-    │                         │
-    ▼                         ├─ task + captured documents
-Two worker slots              ├─ action observations / review record
-    │                         ├─ approved artifacts
-    ▼                         └─ versioned memory
-Context builder
-    │ system contract + goal + document inventory + recent observations
-    ▼
-Local Ollama / labeled scripted demo
-    │ one proposed JSON action
-    ▼
-Schema + capability checks
-    ├─ search / read / recall ── observation ── next turn
-    ├─ write / remember ─────── human review ── atomic save + observation
-    └─ finish ──────────────── completed task
+Computer / Tasks / Files UI
+          │ goals and exact-content review
+          ▼
+Loopback HTTP server ───────────────────── SQLite
+          │                                ├─ task, epoch, app manifest
+          ▼                                ├─ immutable source snapshots
+Two-worker cooperative scheduler           ├─ resident page identifiers
+          │ one model turn per quantum     ├─ observations and review events
+          ▼                                ├─ current files + file history
+Context builder                            └─ artifacts + versioned facts
+          │ goal + manifest + resident pages + recent observations
+          ▼
+Local Ollama / explicitly scripted demo
+          │ one proposed JSON action
+          ▼
+Kernel schema, epoch, capability and path checks
+          ├─ read / page / calculate ── observation ── requeue
+          ├─ persistence proposal ──── review ─────── atomic commit
+          └─ finish ──────────────────────────────── completed task
 ```
 
-## Task lifecycle
+## Task lifecycle and scheduling
 
-`ready -> running -> ready` handles reads. `running -> waiting -> ready` handles a reviewed write.
-`running -> succeeded` handles `finish`. A malformed proposal, provider error, or exhausted step
-budget ends in `failed`. A person may transition an active task to `cancelled`.
+`ready -> running -> ready` handles a read or computation.
+`running -> waiting -> ready` handles a reviewed write.
+`running -> succeeded` handles `finish`. Invalid proposals, provider errors, and step exhaustion
+end in `failed`. A person can cancel an active task.
 
-A worker claims a ready task in an immediate SQLite transaction. The claim consumes a step and
-increments an epoch. The model request happens outside the transaction. The kernel commits its
-response only if the task is still running with that epoch. Cancellation increments the epoch.
-This prevents a slow response from acting after cancellation without holding a database lock while
-the model works.
+A worker claims a task in an immediate SQLite transaction, consuming one step and incrementing
+its epoch. Model I/O occurs outside that transaction. Committing the proposal requires the same
+running state and epoch; cancellation increments the epoch and fences late responses.
 
-The process holds an advisory file lock for its data directory. After acquiring it on restart, the
-server moves interrupted running tasks back to ready and increments their epochs. Waiting reviews
-remain waiting. Recovery repeats a model turn, which may produce a different proposal. It does not
-replay an approved write, because approved writes and their state transitions share a transaction.
+Each worker executes one model turn before returning the task to the queue. Already queued work
+gets an opportunity before that task's next turn. A scheduled-ID set avoids duplicate submissions.
+There are two slots by default. This is cooperative fairness, not time-sliced preemption: a slow
+model call occupies its slot until return or error. Pending reviews occupy no slot. Admission
+control, queue quotas, total deadlines, and compute cancellation at the model server are absent.
 
-## Data boundaries
+An advisory lock permits one server per data directory. Restart recovery moves interrupted turns
+to ready with new epochs and preserves consumed steps. Pending reviews survive. Recovery may
+produce a different model proposal; it does not replay an approved write. Approved effects, their
+events, and the state transition share one transaction.
 
-Documents are copied into a task snapshot at submission. A document added later is absent from that
-task, even if the model guesses its ID. Search is deterministic lexical matching over the snapshot.
-Memory is read live through `recall` and includes its version. A memory proposal records the current
-version; approval fails if another task changed that key in the meantime.
+## Applications and authority
 
-An approval digest covers task ID, step, exact action, and expected memory version. It prevents
-ordinary stale or mismatched UI approval. It is not a signature or a credential. The local caller
-and database owner are trusted. Artifacts are rows in the workspace database; model-supplied titles
-and content never become host filesystem paths.
+Task creation selects a host-owned manifest and stores its snapshot. The model sees the manifest
+but cannot change it by emitting arguments. Workspace permits artifacts, facts, and files under
+`/notes/` or `/reports/`; Research brief permits only file writes under `/reports/`; Read-only
+reviewer has no persistence operation. The task-level write switch can further restrict authority.
 
-## Context and budgets
+Apps share read access. A write namespace is not a confidentiality or tenant boundary. A denied
+operation creates a recorded observation and consumes the turn, but causes no proposed side effect.
 
-The model gets the immutable goal, a bounded document inventory, write capability, remaining step
-count, and recent observations. Observations are included newest-first within an 18,000-character
-history budget, then restored to chronological order. A single observation above 14,000 characters
-is omitted. The context explicitly counts omitted observations. This is a teaching approximation;
-different models need token-aware budgeting and framing overhead.
+## Working memory
 
-The UI uses ten steps per task; the core accepts one to twenty. Two workers may execute separate
-tasks concurrently. Queue scheduling is simple and a long task can occupy a slot until review or
-completion. Socket timeouts bound stalled I/O, not total wall time against a peer that keeps sending
-bytes slowly. Model compute may continue after local cancellation; the epoch check prevents its
-result from affecting the cancelled task.
+A task captures source documents at creation. `page_in` stores a document ID in its resident set;
+subsequent contexts include that immutable document content. `page_out` removes residency without
+deleting the source. When a load would exceed 12,000 source characters, the pager evicts the
+least recently explicitly paged-in documents, with document ID as a tie breaker. Loading an already
+resident page touches its order. Automatically including a page in context does not touch it.
 
-## HTTP boundary
+Resident content reduces the 18,000-character allowance available to recent serialized
+observations. The builder walks newest observations first and stops at the first that cannot fit;
+it then restores chronological order and reports the omitted count. A single observation above
+14,000 characters is omitted. App/goal/inventory/framing and JSON escaping are outside this
+approximation. Token-aware budgeting remains future work.
 
-The server binds only `127.0.0.1`. It checks Host and Origin, requires a custom header plus JSON for
-writes, caps request bytes, serves an explicit asset allowlist, and sends a restrictive CSP. These
-checks reduce browser cross-origin access; they do not authenticate other processes on the machine.
-The UI renders model and document content with `textContent`.
+An evicted source remains retrievable from the task snapshot. Residency itself persists across
+restart. It is not an isolation boundary or guaranteed erasure from a provider's own caches.
+`read` and `fs_read` still use ordinary observation history, not source-page residency.
+
+## Virtual disk and concurrent writes
+
+Paths are validated absolute virtual names; they never reach the host filesystem. Dot traversal,
+backslashes, repeated separators, and invalid components are rejected. Only app-approved directory
+prefixes can be written. The current-file table holds the latest content/version, while the history
+table keeps each approved revision and the originating task/step. Task outputs display their own
+revision even if another task overwrites the same path.
+
+A proposal captures the current file version, including version zero for a missing file. Approval
+compares it under the write transaction. A conflict leaves the task waiting; reject the old proposal
+to let the model continue with new information. Files and facts are read live, unlike source
+snapshots. The 100-entry model file listing is bounded; shared file storage and the UI list have no
+total quota yet.
+
+The review digest covers task ID, step, exact action, and expected versions. It detects stale UI
+decisions, not malicious local callers; it is neither a signature nor authentication.
+
+## Tools and HTTP boundary
+
+Arithmetic walks a whitelist of AST nodes. It allows numbers, parentheses and four arithmetic
+operators, with expression length, AST size and intermediate magnitude limits. It does not use
+`eval`, import code, or resolve names.
+
+HTTP binds only to `127.0.0.1`, validates Host/Origin, requires a custom header and JSON for writes,
+limits request bytes, serves an explicit asset allowlist, and sends a restrictive CSP. UI content
+uses `textContent`. These checks reduce browser cross-origin access; they do not authenticate
+processes or people sharing the local account.
+
+## Persistence upgrade
+
+Startup adds missing paging/file tables and the app-manifest column. Old tasks use the Workspace
+manifest when their stored manifest is empty. Migration is covered by a populated-database test,
+not a general schema-versioning framework or a power-loss certification.

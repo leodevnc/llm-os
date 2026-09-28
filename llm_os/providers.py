@@ -3,6 +3,7 @@
 import http.client
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from .kernel import action_schema, validate_action
@@ -76,28 +77,82 @@ class Demo:
         return {"op": "finish", "args": {"text": "The release brief is saved. Approved workspace memory is available to future tasks. This was the scripted demo."}}
 
 
+class OSDemo:
+    """A fixed, labeled program that exercises actual kernel operations."""
+    def next(self, task, messages):
+        observations = [event["payload"] for event in task["events"] if event["kind"] == "observation"]
+        if any(event["kind"] == "denied" for event in task["events"]) or any(
+            isinstance(item["result"], dict) and "error" in item["result"] for item in observations
+        ):
+            return {"op": "finish", "args": {"text": "The OS demo stopped after a denied or unsuccessful action."}}
+        by_op = {item["op"]: item for item in observations}
+        if "search" not in by_op:
+            return {"op": "search", "args": {"query": "release"}}
+        if "page_in" not in by_op:
+            matches = by_op["search"]["result"]
+            if not matches:
+                return {"op": "finish", "args": {"text": "No release source was found."}}
+            return {"op": "page_in", "args": {"document_id": matches[0]["id"]}}
+        if "calculate" not in by_op:
+            return {"op": "calculate", "args": {"expression": "18 * 7 + 24"}}
+        if "fs_write" not in by_op:
+            context = json.loads(messages[1]["content"])
+            pages = context["resident_pages"]
+            if not pages:
+                return {"op": "finish", "args": {"text": "The source page is no longer resident."}}
+            content = ("# Release brief\n\n" + pages[0]["content"] +
+                       "\n\nPlanning estimate: " + str(by_op["calculate"]["result"]["value"]) +
+                       " units (18 × 7 + 24).\n\nPrepared by the scripted OS demo.")
+            return {"op": "fs_write", "args": {"path": "/reports/release-brief.md", "content": content}}
+        if "page_out" not in by_op:
+            return {"op": "page_out", "args": {"document_id": by_op["page_in"]["args"]["document_id"]}}
+        return {"op": "finish", "args": {"text": "The reviewed report is on the virtual disk. Its source page was released from working memory. This was the scripted OS demo."}}
+
+
 class Runner:
-    def __init__(self, kernel, ollama=None):
+    def __init__(self, kernel, ollama=None, workers=2):
         self.kernel = kernel
         self.ollama = ollama or Ollama()
-        self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-os")
+        self.pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="llm-os")
+        self.lock = threading.Lock()
+        self.scheduled = set()
+        self.closing = False
 
     def submit(self, task_id):
-        return self.pool.submit(self.drive, task_id)
+        with self.lock:
+            if self.closing or task_id in self.scheduled:
+                return None
+            self.scheduled.add(task_id)
+            return self.pool.submit(self._tick, task_id)
+
+    def _step(self, task_id):
+        epoch = self.kernel.claim(task_id)
+        if epoch is None:
+            return False
+        try:
+            task = self.kernel.task(task_id)
+            provider = {"demo": Demo(), "os-demo": OSDemo()}.get(task["mode"], self.ollama)
+            action = provider.next(task, self.kernel.context(task_id))
+            self.kernel.commit_action(task_id, epoch, action)
+        except Exception as exc:
+            self.kernel.fail(task_id, epoch, str(exc))
+        return True
+
+    def _tick(self, task_id):
+        try:
+            self._step(task_id)
+        finally:
+            with self.lock:
+                self.scheduled.discard(task_id)
+            if self.kernel.task(task_id)["state"] == "ready":
+                self.submit(task_id)  # Yield to already queued tasks after one model turn.
 
     def drive(self, task_id):
-        while True:
-            epoch = self.kernel.claim(task_id)
-            if epoch is None:
-                return
-            try:
-                task = self.kernel.task(task_id)
-                provider = Demo() if task["mode"] == "demo" else self.ollama
-                action = provider.next(task, self.kernel.context(task_id))
-                self.kernel.commit_action(task_id, epoch, action)
-            except Exception as exc:
-                self.kernel.fail(task_id, epoch, str(exc))
-                return
+        """Synchronous driver for deterministic tests and embedded use."""
+        while self._step(task_id):
+            pass
 
     def close(self):
+        with self.lock:
+            self.closing = True
         self.pool.shutdown(wait=True, cancel_futures=True)

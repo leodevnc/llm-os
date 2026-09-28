@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-os"
-version = "0.1.0"
-description = "A local workspace with a bounded model loop, durable tasks, and approved writes"
+version = "0.2.0"
+description = "A local LLM operating environment with context paging, scoped apps, and versioned files"
 requires-python = ">=3.11"
 dependencies = []
 
