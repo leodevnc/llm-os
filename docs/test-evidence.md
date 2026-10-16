@@ -1,19 +1,14 @@
-# Test evidence
+# Testing
 
-Latest UI verification (2026-10-16): 38 Python checks and 6 browser tests passed. See [UI design notes](ui-design.md). The earlier run below remains as a historical record.
-
-Verified on 2026-09-28 with Python 3.11.15, Node.js 22.23.2, Playwright 1.63.0 and headless Chromium
-under WSL. Runtime code has no third-party Python dependencies.
+Runtime code has no third-party Python dependencies. Browser tests use Playwright and Chromium.
 
 ## Kernel, provider, and HTTP checks
 
-```text
+```bash
 python3 -m unittest discover -s tests -v
-Ran 38 tests in 8.157s
-OK
 ```
 
-The new OS checks cover:
+Kernel checks cover:
 
 - Source-page eviction, explicit touch order, reload, and release without deleting backing data.
 - A six-turn scripted research workflow with reviewed file persistence.
@@ -30,14 +25,15 @@ and HTTP Host/Origin restrictions. Recovery is tested on persistent SQLite state
 power or killing the OS.
 
 The Ollama adapter makes a real HTTP request to a loopback stub and checks its 12-action JSON
-schema. No installed local model was available. Inference quality, actual model tool selection,
-and model-specific schema support are **not verified**.
+schema. This does not verify inference quality, actual model tool selection, or model-specific
+schema support.
 
 ## Browser workflow
 
-```text
+```bash
+npm ci
+npx playwright install chromium
 npm run test:e2e
-5 passed (11.0s)
 ```
 
 A fresh temporary workspace is created for every suite run. Chromium checks:
@@ -49,26 +45,23 @@ A fresh temporary workspace is created for every suite run. Chromium checks:
 4. Rejection saves no artifact.
 5. Document HTML renders literally rather than executing.
 
-Both complete workflows capture page errors and assert none. The desktop and 390-pixel mobile
-layouts were inspected; tested mobile pages do not overflow horizontally.
+The suite captures page errors and checks keyboard navigation and document overflow on desktop
+and mobile viewports. It is not a comprehensive accessibility audit.
 
 - [Computer](os-overview.png)
 - [Working memory and file review](os-working-memory.png)
 - [Mobile Computer](os-mobile.png)
 - [Original task flow](workspace.png)
 
-The in-app Browser connection failed before setup in this environment. Tests used an isolated
-headless Chromium process, with NSS/NSPR libraries supplied from a temporary directory. A standard
-Linux setup can install prerequisites with Playwright's `--with-deps` option.
+Linux hosts need Chromium system libraries. Playwright's `--with-deps` installer requires suitable
+host permissions.
 
 ## Packaging and static checks
 
-`python3 -m pip wheel --no-build-isolation --no-deps --wheel-dir /tmp/llm-os-wheel .`
-successfully built `llm_os-0.2.0-py3-none-any.whl`.
-The package includes all runtime modules and static HTML/CSS/JavaScript assets.
-Both browser scripts passed `node --check`; `git diff --check` passed.
+Build with `python3 -m pip wheel --no-build-isolation --no-deps .`.
+The package must include all runtime modules and static HTML/CSS/JavaScript assets.
 
-## What these results do not establish
+## Limits
 
 Model accuracy, prompt-injection resistance, multi-user isolation, hardware integration, production
 capacity, token-budget correctness, or power-loss durability. File review is authorization, not a

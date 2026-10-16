@@ -11,8 +11,6 @@ architecture. It runs **inside** Linux, macOS, or WSL; it is not a bootable OS o
 
 ![Computer overview](docs/os-overview.png)
 
-The interface uses neutral surfaces, restrained status accents and responsive navigation. See [UI design and verification](docs/ui-design.md) for the visual refresh and keyboard checks.
-
 ## What runs today
 
 | Component | Implemented behavior |
