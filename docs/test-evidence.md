@@ -1,5 +1,7 @@
 # Test evidence
 
+Latest UI verification (2026-10-16): 38 Python checks and 6 browser tests passed. See [UI design notes](ui-design.md). The earlier run below remains as a historical record.
+
 Verified on 2026-09-28 with Python 3.11.15, Node.js 22.23.2, Playwright 1.63.0 and headless Chromium
 under WSL. Runtime code has no third-party Python dependencies.
 
